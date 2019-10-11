@@ -1,5 +1,7 @@
 # monaco-editor-code-block
 
+This tears out comments in the form of "// example" into another column to the right of the code-block. This was just an ad-hoc example for a blog.
+
 Using the cdnjs. (Though this is not advised as you have to use getWorkerUrl below to bypass worker domain checks):
 
 ```html
