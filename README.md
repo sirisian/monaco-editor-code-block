@@ -56,12 +56,13 @@ function CreatePastels(n, theme = 'dark', alpha = 1) {
   }
   return colors;
 }
-const colors = CreatePastels(15, 'dark', 0.5);
-const fontColors = CreatePastels(15);
+const colors = CreatePastels(10, 'dark', 0.5);
+const fontColors = CreatePastels(10);
 
 let styles = '';
 colors.forEach((color, index) => {
   styles += `.color${index} { background-color: ${color}; }`;
+  styles += `.linecolor${index} { background: linear-gradient(to right, transparent var(--gradient-distance), ${color}); }`;
 });
 const style = document.createElement("style");
 style.textContent = styles;
@@ -73,19 +74,19 @@ customElements.define('ui-code', class extends HTMLElement {
     this.attachShadow({mode: 'open'});
     this.shadowRoot.innerHTML = `<style>
       :host {
-        display: flex;
+        display: inline-flex;
         flex-flow: row nowrap;
+        border: 1px solid gray;
       }
       ::slotted(.code) {
         flex: 0 0 auto;
         width: 800px;
-        border: 1px solid gray;
       }
       :host > .comments {
         flex: 0 0 auto;
         display: flex;
         flex-flow: column nowrap;
-        border: 1px solid gray;
+        border-left: 1px solid gray;
         background-color: #1e1e1e;
         color: white;
       }
@@ -96,7 +97,7 @@ customElements.define('ui-code', class extends HTMLElement {
         line-height: 19px;
         letter-spacing: 0px;
         white-space: pre;
-        padding-left: 5px;
+        padding: 0 5px;
       }
       :host > .comments > div:empty:before {
         content: ' ';
@@ -109,9 +110,9 @@ customElements.define('ui-code', class extends HTMLElement {
     function getColor()
     {
       const index = colorIndex++ % colors.length;
-      return [`color${index}`, fontColors[index]];
+      return [`color${index}`, `linecolor${index}`, fontColors[index]];
     }
-
+    
     require(['vs/editor/editor.main'], () => {
       (async () => {
       const url = this.getAttribute('url');
@@ -120,13 +121,12 @@ customElements.define('ui-code', class extends HTMLElement {
       let start = null;
       let end = null;
       if (lineMatches != null && lineMatches.length >= 2) {
-        start = parseInt(lineMatches[1], 10);
+        start = parseInt(lineMatches[1], 10) - 1;
       }
       if (lineMatches != null && lineMatches.length == 3) {
-        end = parseInt(lineMatches[2], 10) + 1;
+        end = parseInt(lineMatches[2], 10) - 1;
       }
       let code = await (await fetch(url)).text();
-      code = code.replace(/\/\*\s*?SPDX-License-Identifier: MIT\s*?\*\/\n\n?/i, '');
       let codeLines = code.split(/\n/g).map(line => {
         const matches = line.match(/^(.*?)(?:\s*\/\/.*)?$/);
         return matches != null && matches.length != 1 ? matches[1] : '';
@@ -136,19 +136,35 @@ customElements.define('ui-code', class extends HTMLElement {
         const matches = line.match(/^.*?\/\/\s?(.*)$/);
         return matches != null && matches.length != 1 ? matches[1] : '';
       });
-      if (start) {
-        codeLines = codeLines.slice(start, end ? end : start + 1);
-        commentLines = commentLines.slice(start, end ? end : start + 1);
-      }
       //console.log(commentLines);
+      if (start !== null) {
+        codeLines = codeLines.slice(start, end ? end + 1 : start + 1);
+        commentLines = commentLines.slice(start, end ? end + 1 : start + 1);
+      }
+      const lineMap = {};
+      codeLines.forEach((line, index) => {
+        lineMap[index + 1] = index + 1;
+      });
+      if (codeLines.length > 2 && /\/\*\s*?SPDX-License-Identifier: MIT\s*?\*\//i.test(codeLines[0])) {
+        const deleteNextLine = codeLines[1] == '';
+        codeLines.splice(0, deleteNextLine ? 2 : 1);
+        commentLines.splice(0, deleteNextLine ? 2 : 1);
+        for (let i = 0; i < codeLines.length; ++i) {
+            lineMap[i + 1] += deleteNextLine ? 2 : 1;
+          }
+      }
       for (let i = 0; i < codeLines.length - 1; ++i) {
         if (codeLines[i] == '' && commentLines[i] != '' && commentLines[i + 1] == '') {
           commentLines[i + 1] = commentLines[i];
           commentLines[i] = '';
         }
-        if (codeLines[i] == '' && commentLines[i] == '' && codeLines[i + 1] == '') {
+        if (/^\s*$/.test(codeLines[i]) && commentLines[i] == '' && /^\s*$/.test(codeLines[i + 1])) {
           codeLines.splice(i, 1);
           commentLines.splice(i, 1);
+          console.log(i);
+          for (let j = i; j < codeLines.length; ++j) {
+            lineMap[j + 2]++;
+          }
           i--;
         }
       }
@@ -177,12 +193,13 @@ customElements.define('ui-code', class extends HTMLElement {
         renderLineHighlight: false,
         matchBrackets: false,
         occurrencesHighlight: false,
-        theme: 'vs-dark'
+        theme: 'vs-dark',
+        lineNumbers: originalLineNumber => lineMap[originalLineNumber]
       });
       const declarations = [];
       for (let i = 0; i < commentLines.length; ++i) {
         const comment = commentLines[i];
-        const [colorClass, color] = getColor();
+        const [colorClass, lineColorClass, color] = getColor();
         const $comment = document.createElement('div');
         $comment.textContent = comment ? comment : '';
         $comment.style.color = color;
@@ -192,7 +209,8 @@ customElements.define('ui-code', class extends HTMLElement {
             range: new monaco.Range(i + 1,1,i + 1,1000), options:
             {
               isWholeLine: true,
-              linesDecorationsClassName: colorClass,
+              //linesDecorationsClassName: colorClass,
+              className: lineColorClass,
               hoverMessage: commentLines[i]
             }
           });
@@ -209,6 +227,12 @@ customElements.define('ui-code', class extends HTMLElement {
         el.style.width = el.parentNode.style.width;
         el.style.height = `${height + 7}px`;
         editor.layout();
+        setTimeout(() => {
+          const viewOverlays = el.querySelectorAll('.view-overlays > div');
+          el.querySelectorAll('.view-line').forEach((node, index) => {
+            viewOverlays[index].style.setProperty('--gradient-distance', `${(node.querySelector('span').offsetWidth / (800 - 30) * 100).toFixed(2)}%`);
+          });
+        }, 0);
       }, 0);
       })();
     });
