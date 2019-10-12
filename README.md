@@ -140,12 +140,12 @@ customElements.define('ui-code', class extends HTMLElement {
       });
       //console.log(commentLines);
       if (start !== null) {
-        codeLines = codeLines.slice(start, end ? end + 1 : start + 1);
-        commentLines = commentLines.slice(start, end ? end + 1 : start + 1);
+        codeLines = codeLines.slice(start, end ? end + 2 : start + 1);
+        commentLines = commentLines.slice(start, end ? end + 2 : start + 1);
       }
       const lineMap = {};
       codeLines.forEach((line, index) => {
-        lineMap[index + 1] = index + 1;
+        lineMap[index + 1] = index + 1 + (start ? start : 0);
       });
       if (codeLines.length > 2 && /\/\*\s*?SPDX-License-Identifier: MIT\s*?\*\//i.test(codeLines[0])) {
         const deleteNextLine = codeLines[1] == '';
@@ -163,7 +163,6 @@ customElements.define('ui-code', class extends HTMLElement {
         if (/^\s*$/.test(codeLines[i]) && commentLines[i] == '' && /^\s*$/.test(codeLines[i + 1])) {
           codeLines.splice(i, 1);
           commentLines.splice(i, 1);
-          console.log(i);
           for (let j = i; j < codeLines.length; ++j) {
             lineMap[j + 2]++;
           }
@@ -195,6 +194,7 @@ customElements.define('ui-code', class extends HTMLElement {
         renderLineHighlight: false,
         matchBrackets: false,
         occurrencesHighlight: false,
+        selectionHighlight: false,
         theme: 'vs-dark',
         lineNumbers: originalLineNumber => lineMap[originalLineNumber]
       });
@@ -219,7 +219,23 @@ customElements.define('ui-code', class extends HTMLElement {
         }
       }
       editor.deltaDecorations([], declarations);
-
+      const updateLines = () => {
+        const el = editor.getDomNode();
+        const viewOverlays = el.querySelectorAll('.view-overlays > div');
+        el.querySelectorAll('.view-line').forEach((node, index) => {
+          viewOverlays[index].style.setProperty('--gradient-distance', `${(node.querySelector('span').offsetWidth / (800 - 30) * 100).toFixed(2)}%`);
+        });
+      };
+      editor.onDidChangeCursorPosition((e) => {
+        setTimeout(updateLines, 0);
+        setTimeout(updateLines, 100);
+      });
+      editor.onDidChangeCursorSelection(() => {
+        //console.log('here');
+        setTimeout(updateLines, 0);
+        setTimeout(updateLines, 100);
+      });
+      
       setTimeout(() => {
         const el = editor.getDomNode();
         el.style.height = 0;
@@ -230,10 +246,7 @@ customElements.define('ui-code', class extends HTMLElement {
         el.style.height = `${height + 7}px`;
         editor.layout();
         setTimeout(() => {
-          const viewOverlays = el.querySelectorAll('.view-overlays > div');
-          el.querySelectorAll('.view-line').forEach((node, index) => {
-            viewOverlays[index].style.setProperty('--gradient-distance', `${(node.querySelector('span').offsetWidth / (800 - 30) * 100).toFixed(2)}%`);
-          });
+          updateLines();
         }, 0);
       }, 0);
       })();
